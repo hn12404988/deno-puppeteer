@@ -1,6 +1,5 @@
 import puppeteer from "./mod.ts";
 import { PUPPETEER_REVISIONS } from "./vendor/puppeteer-core/puppeteer/revisions.js";
-import ProgressBar from "https://deno.land/x/progress@v1.1.4/mod.ts";
 
 let product = Deno.env.get("PUPPETEER_PRODUCT");
 if (product != "chrome" && product != "firefox") {
@@ -9,6 +8,7 @@ if (product != "chrome" && product != "firefox") {
   }
   product = "chrome";
 }
+console.log(`Using product: ${product}`);
 const fetcher = puppeteer.createBrowserFetcher({ product });
 let revision;
 if (product == "chrome") {
@@ -30,19 +30,20 @@ const revisionInfo = fetcher.revisionInfo(revision);
 if (revisionInfo.local) {
   console.log(`Already downloaded at ${revisionInfo.executablePath}`);
 } else {
-  let progressBar: ProgressBar;
+  console.log(
+    `Downloading ${revisionInfo.product} ${revisionInfo.revision} from ${revisionInfo.url}`,
+  );
   const newRevisionInfo = await fetcher.download(
     revisionInfo.revision,
     (current, total) => {
-      if (!progressBar) {
-        progressBar = new ProgressBar({
-          total,
-        });
-      }
-      if (!(progressBar as any).isCompleted) {
-        progressBar.render(current);
+      if (current === 0) {
+        console.log("Starting download...");
+      } else if (current === total) {
+        console.log("Download complete.");
       } else {
-        console.log("Done downloading. Installing now.");
+        console.log(
+          `Downloading... ${((current / total) * 100).toFixed(2)}%`,
+        );
       }
     },
   );
