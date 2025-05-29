@@ -1,6 +1,6 @@
-FROM debian:buster-slim
+FROM debian:bullseye-slim
 
-ENV DENO_VERSION=1.25.0
+ENV DENO_VERSION=2.3.3
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get -qq update \
@@ -53,6 +53,11 @@ RUN apt-get -qq update \
     libxkbcommon0 \
     libxshmfence1 \
 # ↑ Added based on the information obtained from by console.log(line) at https://deno.land/x/puppeteer@9.0.2/src/deno/BrowserRunner.ts#L168.
+# ↓ Additional packages for better fontconfig compatibility
+    fontconfig \
+    fonts-dejavu-core \
+    fonts-freefont-ttf \
+# ↑ Additional packages for better fontconfig compatibility
     && curl -fsSL https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip \
     --output deno.zip \
     && unzip deno.zip \
@@ -66,7 +71,12 @@ RUN apt-get -qq update \
     unzip \
     && apt-get -y -qq autoremove \
     && apt-get -qq clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
+# ↓ Fix fontconfig cache and permissions
+    && fc-cache -fv # Rebuild font cache
+    # && chmod -R 755 /var/cache/fontconfig # Removed chmod
+    # && chmod -R 755 /usr/share/fontconfig # Removed chmod
+# ↑ Fix fontconfig cache and permissions
 
 RUN useradd --uid 1993 --user-group deno \
  && mkdir /deno-dir/ \
@@ -82,6 +92,3 @@ COPY . .
 # https://deno.land/x/puppeteer@9.0.2#installation
 # In your real script, replace the installation script with https://deno.land/x/puppeteer@9.0.2/install.ts
 RUN PUPPETEER_PRODUCT=chrome deno run -A --unstable ./install.ts
-
-ENTRYPOINT ["deno"]
-CMD ["run", "-A", "--no-check", "--unstable", "./examples/docker.js"]
