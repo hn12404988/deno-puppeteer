@@ -452,7 +452,7 @@ async function downloadFile(
   for await (const chunk of response.body!) {
     downloadedBytes += chunk.length;
     progressCallback?.(downloadedBytes, totalBytes);
-    await Deno.writeAll(file, chunk);
+    await file.write(chunk);
   }
 }
 
@@ -480,21 +480,23 @@ async function extractTar(tarPath: string, folderPath: string): Promise<void> {
   console.log(folderPath);
   await Deno.mkdir(folderPath, { recursive: true });
 
-  const bzcat = Deno.run({
-    cmd: ["bzcat", tarPath],
+  const bzcat = new Deno.Command("bzcat", {
+    args: [tarPath],
     stdout: "piped",
   });
+  const bzcatProcess = bzcat.spawn();
   const tmp = await Deno.makeTempFile();
   const file = await Deno.create(tmp);
-  await Deno.copy(bzcat.stdout, file);
-  assert((await bzcat.status()).success, "failed bzcat");
-  bzcat.close();
+  await bzcatProcess.stdout.pipeTo(file.writable);
+  const bzcatStatus = await bzcatProcess.status;
+  assert(bzcatStatus.success, "failed bzcat");
 
-  const untar = Deno.run({
-    cmd: ["tar", "-C", folderPath, "-xvf", tmp],
+  const untar = new Deno.Command("tar", {
+    args: ["-C", folderPath, "-xvf", tmp],
   });
-  assert((await untar.status()).success, "failed untar");
-  untar.close();
+  const untarProcess = untar.spawn();
+  const untarStatus = await untarProcess.status;
+  assert(untarStatus.success, "failed untar");
 }
 
 /**
@@ -503,11 +505,12 @@ async function extractTar(tarPath: string, folderPath: string): Promise<void> {
 async function installDMG(dmgPath: string, folderPath: string): Promise<void> {
   let mountPath;
   try {
-    const proc = Deno.run({
-      cmd: ["hdiutil", "attach", "-nobrowse", "-noautoopen", dmgPath],
+    const proc = new Deno.Command("hdiutil", {
+      args: ["attach", "-nobrowse", "-noautoopen", dmgPath],
+      stdout: "piped",
     });
-    const stdout = new TextDecoder().decode(await proc.output());
-    proc.close();
+    const procResult = await proc.output();
+    const stdout = new TextDecoder().decode(procResult.stdout);
     const volumes = stdout.match(/\/Volumes\/(.*)/m);
     if (!volumes) throw new Error(`Could not find volume path in ${stdout}`);
     mountPath = volumes[0];
@@ -523,12 +526,11 @@ async function installDMG(dmgPath: string, folderPath: string): Promise<void> {
     copyDir(pathJoin(mountPath, appName), folderPath);
   } finally {
     if (mountPath) {
-      const proc = Deno.run({
-        cmd: ["hdiutil", "detach", mountPath, "-quiet"],
+      const proc = new Deno.Command("hdiutil", {
+        args: ["detach", mountPath, "-quiet"],
       });
       debugFetcher(`Unmounting ${mountPath}`);
-      const status = await proc.status();
-      proc.close();
+      const status = await proc.output();
       assert(status.success, "unmounting failed");
     }
   }

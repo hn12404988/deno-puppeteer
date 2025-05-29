@@ -1824,7 +1824,7 @@ export declare class Page extends EventEmitter {
    * @returns Promise which resolves to buffer or a base64 string (depending on
    * the value of `encoding`) with captured screenshot.
    */
-  screenshot(options?: ScreenshotOptions): Promise<Buffer | string>;
+  screenshot(options?: ScreenshotOptions): Promise<Uint8Array | string>;
   /**
    * Generates a PDF of the page with the `print` CSS media type.
    * @remarks

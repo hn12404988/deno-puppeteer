@@ -38,7 +38,7 @@ export class BrowserRunner {
   private _processArguments: string[];
   private _tempDirectory?: string;
 
-  proc: Deno.Process | undefined = undefined;
+  proc: Deno.ChildProcess | undefined = undefined;
   connection: Connection | undefined = undefined;
 
   private _closed = true;
@@ -61,26 +61,26 @@ export class BrowserRunner {
     debugLauncher(
       `Calling ${this._executablePath} ${this._processArguments.join(" ")}`,
     );
-    this.proc = Deno.run({
-      cmd: [this._executablePath, ...this._processArguments],
+    const command = new Deno.Command(this._executablePath, {
+      args: this._processArguments,
       env,
       stdin: "piped",
       stdout: "piped",
       stderr: "piped",
     });
+    this.proc = command.spawn();
     this._closed = false;
-    this._processClosing = this.proc.status().then(async (status) => {
+    this._processClosing = this.proc.status.then(async (status) => {
       this._closed = true;
       try {
         if (this.proc) {
           if (!status.success && dumpio) {
-            await Deno.copy(this.proc.stdout!, Deno.stdout);
-            await Deno.copy(this.proc.stderr!, Deno.stderr);
+            await this.proc.stdout.pipeTo(Deno.stdout.writable, { preventClose: true });
+            await this.proc.stderr.pipeTo(Deno.stderr.writable, { preventClose: true });
           }
-          this.proc.stdin!.close();
-          this.proc.stdout!.close();
-          this.proc.stderr!.close();
-          this.proc.close();
+          await this.proc.stdin.close();
+          await this.proc.stdout.cancel();
+          await this.proc.stderr.cancel();
         }
       } catch (err) {
         if (!(err instanceof Deno.errors.BadResource)) {
@@ -128,7 +128,7 @@ export class BrowserRunner {
         this.proc.kill("SIGKILL");
       } catch (error) {
         throw new Error(
-          `${PROCESS_ERROR_EXPLANATION}\nError cause: ${error.stack}`,
+          `${PROCESS_ERROR_EXPLANATION}\nError cause: ${(error as Error).stack}`,
         );
       }
     }
@@ -155,7 +155,7 @@ export class BrowserRunner {
 }
 
 async function waitForWSEndpoint(
-  browserProcess: Deno.Process,
+  browserProcess: Deno.ChildProcess,
   timeout: number,
   preferredRevision: string,
 ): Promise<string> {

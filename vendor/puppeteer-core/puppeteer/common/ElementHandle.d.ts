@@ -434,7 +434,7 @@ export declare class ElementHandle<ElementType extends any = any>
   screenshot(
     this: ElementHandle<any>,
     options?: ScreenshotOptions,
-  ): Promise<string | Buffer>;
+  ): Promise<string | Uint8Array>;
   /**
    * Resolves to true if the element is visible in the current viewport.
    */

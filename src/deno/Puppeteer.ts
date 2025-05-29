@@ -87,7 +87,7 @@ export class PuppeteerDeno extends Puppeteer {
    * @param options - Set of configurable options to set on the browser.
    * @returns Promise which resolves to browser instance.
    */
-  connect(options: ConnectOptions): Promise<Browser> {
+  override connect(options: ConnectOptions): Promise<Browser> {
     return super.connect(options);
   }
 

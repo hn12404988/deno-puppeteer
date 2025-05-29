@@ -184,7 +184,7 @@ export declare class Browser extends EventEmitter {
     contextIds: string[],
     ignoreHTTPSErrors: boolean,
     defaultViewport?: Viewport | null,
-    process?: Deno.Process,
+    process?: Deno.ChildProcess,
     closeCallback?: BrowserCloseCallback,
     targetFilterCallback?: TargetFilterCallback,
     isPageTargetCallback?: IsPageTargetCallback,
@@ -202,7 +202,7 @@ export declare class Browser extends EventEmitter {
     contextIds: string[],
     ignoreHTTPSErrors: boolean,
     defaultViewport?: Viewport | null,
-    process?: Deno.Process,
+    process?: Deno.ChildProcess,
     closeCallback?: BrowserCloseCallback,
     targetFilterCallback?: TargetFilterCallback,
     isPageTargetCallback?: IsPageTargetCallback,
@@ -219,7 +219,7 @@ export declare class Browser extends EventEmitter {
    * The spawned browser process. Returns `null` if the browser instance was created with
    * {@link Puppeteer.connect}.
    */
-  process(): Deno.Process | null;
+  process(): Deno.ChildProcess | null;
   /**
    * @internal
    */
