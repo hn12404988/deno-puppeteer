@@ -66,8 +66,8 @@ if (product == "chrome") {
     "https://product-details.mozilla.org/1.0/firefox_versions.json",
   );
   const versions = await req.json();
-  revision = versions.FIREFOX_ESR;
-  if (!versions.FIREFOX_ESR) {
+  revision = versions.FIREFOX_NIGHTLY;
+  if (!versions.FIREFOX_NIGHTLY) {
     throw new Error("Firefox version not found");
   }
 }

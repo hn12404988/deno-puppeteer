@@ -203,15 +203,25 @@ export class BrowserFetcher {
   private setPlatform(platformFromOptions?: Platform): void {
     if (platformFromOptions) {
       this._platform = platformFromOptions;
+      debugFetcher(`Platform set from options: ${this._platform}`);
       return;
     }
 
     const platform = Deno.build.os;
-    if (platform === "darwin") this._platform = "mac";
-    else if (platform === "linux") this._platform = "linux";
-    else if (platform === "windows") {
-      this._platform = Deno.build.arch === "x86_64" ? "win64" : "win32";
-    } else assert(this._platform, "Unsupported platform: " + Deno.build.os);
+    const arch = Deno.build.arch;
+    
+    if (platform === "darwin") {
+      this._platform = "mac";
+    } else if (platform === "linux") {
+      // Fix: Properly detect ARM64 architecture on Linux
+      this._platform = arch === "aarch64" ? "linux-arm64" : "linux";
+    } else if (platform === "windows") {
+      this._platform = arch === "x86_64" ? "win64" : "win32";
+    } else {
+      assert(this._platform, "Unsupported platform: " + platform);
+    }
+    
+    debugFetcher(`Platform auto-detected: ${this._platform} (OS: ${platform}, Arch: ${arch})`);
   }
 
   /**
@@ -347,15 +357,28 @@ export class BrowserFetcher {
    * available locally on disk.
    */
   async localRevisions(): Promise<string[]> {
-    if (!(await exists(this._downloadsFolder))) return [];
+    if (!(await exists(this._downloadsFolder))) {
+      debugFetcher(`Downloads folder does not exist: ${this._downloadsFolder}`);
+      return [];
+    }
+    
     const fileNames = [];
     for await (const file of Deno.readDir(this._downloadsFolder)) {
       fileNames.push(file.name);
     }
-    return fileNames
-      .map((fileName) => parseName(this._product, fileName))
-      .filter((entry) => entry && entry.platform === this._platform)
-      .map((entry) => entry!.revision);
+    
+    debugFetcher(`Found ${fileNames.length} items in downloads folder: ${fileNames.join(', ')}`);
+    debugFetcher(`Looking for platform: ${this._platform}, product: ${this._product}`);
+    
+    const parsedEntries = fileNames.map((fileName) => parseName(this._product, fileName));
+    const filteredEntries = parsedEntries.filter((entry) => entry && entry.platform === this._platform);
+    const revisions = filteredEntries.map((entry) => entry!.revision);
+    
+    debugFetcher(`Parsed entries: ${JSON.stringify(parsedEntries)}`);
+    debugFetcher(`Filtered entries for platform ${this._platform}: ${JSON.stringify(filteredEntries)}`);
+    debugFetcher(`Local revisions found: ${revisions.join(', ')}`);
+    
+    return revisions;
   }
 
   /**

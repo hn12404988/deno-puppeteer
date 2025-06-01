@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Test Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .test-element {
+            background: #e7f3ff;
+            padding: 10px;
+            margin: 10px 0;
+            border-left: 4px solid #2196F3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Simple Test Page</h1>
+        <div class="test-element" id="element1">
+            <p>This is test element 1</p>
+        </div>
+        <div class="test-element" id="element2">
+            <p>This is test element 2</p>
+        </div>
+        <button id="testButton" onclick="handleClick()">Click Me</button>
+        <div id="result"></div>
+    </div>
+    
+    <script>
+        function handleClick() {
+            document.getElementById('result').textContent = 'Button was clicked!';
+        }
+    </script>
+</body>
+</html>

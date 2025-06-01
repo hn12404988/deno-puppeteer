@@ -79,8 +79,22 @@ export class BrowserRunner {
             await this.proc.stderr.pipeTo(Deno.stderr.writable, { preventClose: true });
           }
           await this.proc.stdin.close();
-          await this.proc.stdout.cancel();
-          await this.proc.stderr.cancel();
+          try {
+            await this.proc.stdout.cancel();
+          } catch (err) {
+            // Ignore if stream is already locked/cancelled
+            if (!(err instanceof TypeError && err.message.includes("locked"))) {
+              throw err;
+            }
+          }
+          try {
+            await this.proc.stderr.cancel();
+          } catch (err) {
+            // Ignore if stream is already locked/cancelled
+            if (!(err instanceof TypeError && err.message.includes("locked"))) {
+              throw err;
+            }
+          }
         }
       } catch (err) {
         if (!(err instanceof Deno.errors.BadResource)) {
@@ -166,7 +180,7 @@ async function waitForWSEndpoint(
   }, timeout);
 
   for await (const line of readLines(browserProcess.stderr!)) {
-    const match = line.match(/^DevTools listening on (ws:\/\/.*)$/);
+    const match = line.match(/^(?:DevTools|WebDriver BiDi) listening on (ws:\/\/.*)$/);
     if (match) {
       clearTimeout(timeId);
       return match[1];
