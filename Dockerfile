@@ -1,6 +1,8 @@
-FROM debian:bullseye-slim
+# `bookworm-20250520-slim` is arm64 linux
+FROM debian:bookworm-20250520-slim
 
 ENV DENO_VERSION=2.3.3
+ARG DENO_ARM64_ZIP_URL=https://github.com/denoland/deno/releases/download/v2.3.5/deno-aarch64-unknown-linux-gnu.zip
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get -qq update \
@@ -8,6 +10,9 @@ RUN apt-get -qq update \
     curl \
     ca-certificates \
     unzip \
+    bzip2 \
+    xz-utils \
+    file \
 # ↓ https://github.com/puppeteer/puppeteer/blob/main/docs/troubleshooting.md#chrome-headless-doesnt-launch-on-unix
 # Since I want to leave the contents of troubleshooting.md as it is, ca-certificates is intentionally duplicated here.
     ca-certificates \
@@ -58,7 +63,7 @@ RUN apt-get -qq update \
     fonts-dejavu-core \
     fonts-freefont-ttf \
 # ↑ Additional packages for better fontconfig compatibility
-    && curl -fsSL https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip \
+    && curl -fsSL ${DENO_ARM64_ZIP_URL} \
     --output deno.zip \
     && unzip deno.zip \
     && rm deno.zip \
@@ -91,4 +96,4 @@ COPY . .
 
 # https://deno.land/x/puppeteer@9.0.2#installation
 # In your real script, replace the installation script with https://deno.land/x/puppeteer@9.0.2/install.ts
-RUN PUPPETEER_PRODUCT=chrome deno run -A --unstable ./install.ts
+RUN deno run -A --unstable ./install.ts firefox arm64

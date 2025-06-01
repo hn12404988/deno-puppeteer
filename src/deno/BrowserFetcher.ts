@@ -33,12 +33,14 @@ const debugFetcher = debug(`puppeteer:fetcher`);
 const downloadURLs = {
   chrome: {
     linux: "%s/chromium-browser-snapshots/Linux_x64/%d/%s.zip",
+    "linux-arm64": "%s/chromium-browser-snapshots/Linux_arm64/%d/%s.zip", // Not supported, but needed for type compatibility
     mac: "%s/chromium-browser-snapshots/Mac/%d/%s.zip",
     win32: "%s/chromium-browser-snapshots/Win/%d/%s.zip",
     win64: "%s/chromium-browser-snapshots/Win_x64/%d/%s.zip",
   },
   firefox: {
     linux: "%s/firefox-%s.en-US.%s-x86_64.tar.bz2",
+    "linux-arm64": "%s/firefox-%s.en-US.%s-aarch64.tar.bz2", // Placeholder URL for Firefox arm64
     mac: "%s/firefox-%s.en-US.%s.dmg",
     win32: "%s/firefox-%s.en-US.%s.zip",
     win64: "%s/firefox-%s.en-US.%s.zip",
@@ -61,7 +63,7 @@ const browserConfig = {
  * Supported platforms.
  * @public
  */
-export type Platform = "linux" | "mac" | "win32" | "win64";
+export type Platform = "linux" | "linux-arm64" | "mac" | "win32" | "win64";
 
 function archiveName(
   product: Product,
@@ -70,6 +72,7 @@ function archiveName(
 ): string {
   if (product === "chrome") {
     if (platform === "linux") return "chrome-linux";
+    if (platform === "linux-arm64") return "chrome-linux"; // Same archive name for arm64
     if (platform === "mac") return "chrome-mac";
     if (platform === "win32" || platform === "win64") {
       // Windows archive name changed at r591479.
@@ -90,6 +93,15 @@ function downloadURL(
   host: string,
   revision: string
 ): string {
+  // Special case for Firefox - uses different domain and URL format
+  if (product === "firefox" && platform === "linux-arm64") {
+    return "https://download.mozilla.org/?product=firefox-nightly-latest-ssl&os=linux64-aarch64&lang=en-US&_gl=1*se5055*_ga*NDg5MjU3NzYxLjE3MzQ2OTg0MTQ.*_ga_MQ7767QQQW*czE3NDg3NzM0MTUkbzIkZzEkdDE3NDg3NzM4NDQkajQ3JGwwJGgw";
+  }
+  
+  if (product === "firefox" && platform === "linux") {
+    return "https://download.mozilla.org/?product=firefox-nightly-latest-ssl&os=linux64&lang=en-US&_gl=1*1lx0kac*_ga*NDg5MjU3NzYxLjE3MzQ2OTg0MTQ.*_ga_MQ7767QQQW*czE3NDg3NzM0MTUkbzIkZzEkdDE3NDg3NzM4NDQkajQ3JGwwJGgw";
+  }
+  
   const url = sprintf(
     downloadURLs[product][platform],
     host,
@@ -262,25 +274,57 @@ export class BrowserFetcher {
       this._downloadHost,
       revision
     );
-    const fileName = url.split("/").pop()!;
+    
+    let fileName: string;
+    let actualFileName: string | null = null;
+    
+    if (this._product === "firefox" && (this._platform === "linux" || this._platform === "linux-arm64")) {
+      // For Firefox Linux downloads, we need to detect the actual filename from the response
+      const arch = this._platform === "linux-arm64" ? "aarch64" : "x86_64";
+      fileName = `firefox-${revision}.en-US.linux-${arch}.tar.bz2`;
+      
+      // Get the actual filename from the response headers
+      const response = await fetch(url, { method: "HEAD" });
+      const contentDisposition = response.headers.get("content-disposition");
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (match && match[1]) {
+          actualFileName = match[1].replace(/['"]/g, '');
+        }
+      }
+      
+      // If we got an actual filename, use it
+      if (actualFileName) {
+        fileName = actualFileName;
+      }
+    } else {
+      fileName = url.split("/").pop()!;
+    }
     const archivePath = pathJoin(this._downloadsFolder, fileName);
     const outputPath = this._getFolderPath(revision);
     if (await exists(outputPath)) return this.revisionInfo(revision);
     if (!(await exists(this._downloadsFolder))) {
       await Deno.mkdir(this._downloadsFolder, { recursive: true });
     }
-    if ((Deno.build.arch as string) === "arm64") {
+    if ((Deno.build.arch as string) === "arm64" && this._product === "chrome") {
       // handleArm64();
       // return;
-      console.error("arm64 downloads not supported.");
+      console.error("Chrome arm64 downloads not supported on Linux.");
       console.error(
-        "Use PUPPETEER_EXECUTABLE_PATH to specify an executable path."
+        "Use PUPPETEER_EXECUTABLE_PATH to specify an executable path or use Firefox."
       );
       throw new Error();
     }
     try {
       await downloadFile(url, archivePath, progressCallback);
-      await install(archivePath, outputPath);
+      
+      // For Firefox Linux downloads, detect the actual file type and rename if necessary
+      if (this._product === "firefox" && (this._platform === "linux" || this._platform === "linux-arm64")) {
+        const actualArchivePath = await detectAndRenameArchive(archivePath);
+        await install(actualArchivePath, outputPath);
+      } else {
+        await install(archivePath, outputPath);
+      }
     } finally {
       if (await exists(archivePath)) {
         await Deno.remove(archivePath, { recursive: true });
@@ -347,7 +391,7 @@ export class BrowserFetcher {
           "MacOS",
           "Chromium"
         );
-      } else if (this._platform === "linux") {
+      } else if (this._platform === "linux" || this._platform === "linux-arm64") {
         executablePath = pathJoin(
           folderPath,
           archiveName(this._product, this._platform, revision),
@@ -369,7 +413,7 @@ export class BrowserFetcher {
           "MacOS",
           "firefox"
         );
-      } else if (this._platform === "linux") {
+      } else if (this._platform === "linux" || this._platform === "linux-arm64") {
         executablePath = pathJoin(folderPath, "firefox", "firefox");
       } else if (this._platform === "win32" || this._platform === "win64") {
         executablePath = pathJoin(folderPath, "firefox", "firefox.exe");
@@ -415,9 +459,21 @@ function parseName(
   name: string
 ): { product: string; platform: string; revision: string } | null {
   const splits = name.split("-");
-  if (splits.length !== 2) return null;
-  const [platform, revision] = splits;
-  if (!downloadURLs[product]?.[platform as "linux"]) return null;
+  let platform: string;
+  let revision: string;
+  
+  if (splits.length === 2) {
+    // Standard case: platform-revision
+    [platform, revision] = splits;
+  } else if (splits.length === 3 && splits[0] === "linux" && splits[1] === "arm64") {
+    // Special case: linux-arm64-revision
+    platform = "linux-arm64";
+    revision = splits[2];
+  } else {
+    return null;
+  }
+  
+  if (!downloadURLs[product]?.[platform as Platform]) return null;
   return { product, platform, revision };
 }
 
@@ -460,7 +516,11 @@ function install(archivePath: string, folderPath: string): Promise<unknown> {
   debugFetcher(`Installing ${archivePath} to ${folderPath}`);
   if (archivePath.endsWith(".zip")) return extractZip(archivePath, folderPath);
   else if (archivePath.endsWith(".tar.bz2")) {
-    return extractTar(archivePath, folderPath);
+    return extractTarBz2(archivePath, folderPath);
+  } else if (archivePath.endsWith(".tar.gz")) {
+    return extractTarGz(archivePath, folderPath);
+  } else if (archivePath.endsWith(".tar.xz")) {
+    return extractTarXz(archivePath, folderPath);
   } else if (archivePath.endsWith(".dmg")) {
     return Deno.mkdir(folderPath, { recursive: true }).then(() =>
       installDMG(archivePath, folderPath)
@@ -476,7 +536,7 @@ async function extractZip(zipPath: string, folderPath: string): Promise<void> {
 /**
  * @internal
  */
-async function extractTar(tarPath: string, folderPath: string): Promise<void> {
+async function extractTarBz2(tarPath: string, folderPath: string): Promise<void> {
   console.log(folderPath);
   await Deno.mkdir(folderPath, { recursive: true });
 
@@ -497,6 +557,113 @@ async function extractTar(tarPath: string, folderPath: string): Promise<void> {
   const untarProcess = untar.spawn();
   const untarStatus = await untarProcess.status;
   assert(untarStatus.success, "failed untar");
+}
+
+/**
+ * @internal
+ */
+async function extractTarGz(tarPath: string, folderPath: string): Promise<void> {
+  console.log(folderPath);
+  await Deno.mkdir(folderPath, { recursive: true });
+
+  const untar = new Deno.Command("tar", {
+    args: ["-C", folderPath, "-xzf", tarPath],
+  });
+  const untarProcess = untar.spawn();
+  const untarStatus = await untarProcess.status;
+  assert(untarStatus.success, "failed untar");
+}
+
+/**
+ * @internal
+ */
+async function extractTarXz(tarPath: string, folderPath: string): Promise<void> {
+  console.log(folderPath);
+  await Deno.mkdir(folderPath, { recursive: true });
+
+  const untar = new Deno.Command("tar", {
+    args: ["-C", folderPath, "-xJf", tarPath],
+  });
+  const untarProcess = untar.spawn();
+  const untarStatus = await untarProcess.status;
+  assert(untarStatus.success, "failed untar");
+}
+
+/**
+ * @internal
+ */
+async function detectAndRenameArchive(archivePath: string): Promise<string> {
+  // Read the first few bytes to detect file type
+  const file = await Deno.open(archivePath, { read: true });
+  const buffer = new Uint8Array(20);
+  await file.read(buffer);
+  file.close();
+  
+  // Log the file header for debugging
+  console.log(`File header bytes: ${Array.from(buffer.slice(0, 10)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+  
+  // Check for XZ magic number (fd 37 7a 58 5a 00)
+  if (buffer[0] === 0xfd && buffer[1] === 0x37 && buffer[2] === 0x7a &&
+      buffer[3] === 0x58 && buffer[4] === 0x5a && buffer[5] === 0x00) {
+    console.log("Detected XZ format");
+    const newPath = archivePath.replace(/\.tar\.bz2$/, '.tar.xz');
+    await Deno.rename(archivePath, newPath);
+    return newPath;
+  }
+  
+  // Check for gzip magic number (1f 8b)
+  if (buffer[0] === 0x1f && buffer[1] === 0x8b) {
+    console.log("Detected gzip format");
+    const newPath = archivePath.replace(/\.tar\.bz2$/, '.tar.gz');
+    await Deno.rename(archivePath, newPath);
+    return newPath;
+  }
+  
+  // Check for bzip2 magic number (BZ)
+  if (buffer[0] === 0x42 && buffer[1] === 0x5a) {
+    console.log("Detected bzip2 format");
+    return archivePath;
+  }
+  
+  // Check for ZIP magic number (PK)
+  if (buffer[0] === 0x50 && buffer[1] === 0x4b) {
+    console.log("Detected ZIP format");
+    const newPath = archivePath.replace(/\.tar\.bz2$/, '.zip');
+    await Deno.rename(archivePath, newPath);
+    return newPath;
+  }
+  
+  // Try to use file command to detect the type
+  try {
+    const fileCmd = new Deno.Command("file", {
+      args: [archivePath],
+      stdout: "piped",
+    });
+    const result = await fileCmd.output();
+    const output = new TextDecoder().decode(result.stdout);
+    console.log(`File command output: ${output}`);
+    
+    if (output.includes("gzip")) {
+      console.log("File command detected gzip");
+      const newPath = archivePath.replace(/\.tar\.bz2$/, '.tar.gz');
+      await Deno.rename(archivePath, newPath);
+      return newPath;
+    } else if (output.includes("bzip2")) {
+      console.log("File command detected bzip2");
+      return archivePath;
+    } else if (output.includes("Zip")) {
+      console.log("File command detected ZIP");
+      const newPath = archivePath.replace(/\.tar\.bz2$/, '.zip');
+      await Deno.rename(archivePath, newPath);
+      return newPath;
+    }
+  } catch (error) {
+    console.log(`File command failed: ${error}`);
+  }
+  
+  // If we can't detect, keep original and let it fail with a better error
+  console.log("Could not detect file format, keeping original name");
+  return archivePath;
 }
 
 /**
